@@ -5,23 +5,42 @@ require('dotenv').config();
 const app = express();
 app.use(express.json());
 
-const API_KEY = process.env.ASYNC_API_KEY;
+// ✅ Parse JSON bodies
+app.use(express.json());
 
-// ✅ Add this: Homepage route
+// 🔰 Homepage — test with: https://ai-voice-backend-b4q2.onrender.com
 app.get('/', (req, res) => {
-  res.send('🎙️ AI Voice Server is LIVE! Send POST to /api/generate-voice');
+  res.send(`
+    <h2>🎙️ AI Voice Server</h2>
+    <p><strong>Status:</strong> Live and ready</p>
+    <p>Send a <code>POST /api/generate-voice</code> request with:</p>
+    <pre>
+{
+  "text": "Hello, world!",
+  "voice": "male1"
+}
+    </pre>
+  `);
 });
 
-// ✅ Your voice generation route
+// ✅ POST route for voice generation
 app.post('/api/generate-voice', async (req, res) => {
   const { text, voice } = req.body;
 
-  if (!text || !text.trim()) {
-    return res.status(400).json({ message: 'Text is required' });
+  // ✅ Log for debugging
+  console.log('Received request:', { text, voice });
+
+  // ✅ Validate text
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    return res.status(400).json({
+      error: 'Invalid or missing text',
+      message: 'You must provide valid text to convert to speech.'
+    });
   }
 
   try {
-    const response = await axios.post(
+    // 🌐 Call Async.AI API
+    const asyncResponse = await axios.post(
       'https://api.async.ai/v1/speech',
       {
         text: text.trim(),
@@ -30,25 +49,43 @@ app.post('/api/generate-voice', async (req, res) => {
       },
       {
         headers: {
-          'Authorization': `Bearer ${API_KEY}`,
+          'Authorization': `Bearer ${process.env.ASYNC_API_KEY}`,
           'Content-Type': 'application/json'
         },
-        responseType: 'json'
+        responseType: 'json' // Expect JSON response
       }
     );
 
-    // If Async.AI returns audio_url in response.data
-    const audioUrl = response.data.audio_url || 'https://assets.mixkit.co/sfx/preview/mixkit-soap-bubble-pop-2093.mp3';
+    // ✅ Assume Async.AI returns { audio_url: "https://..." }
+    const audioUrl = asyncResponse.data.audio_url;
 
-    res.json({ success: true, audioUrl });
+    if (!audioUrl) {
+      throw new Error('No audio URL returned from Async.AI');
+    }
+
+    // ✅ Send back to frontend
+    return res.json({ success: true, audioUrl });
 
   } catch (error) {
-    console.error('Error:', error.response?.data || error.message);
-    res.status(500).json({ message: 'Voice generation failed' });
+    console.error('API Error:', error.response?.data || error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to generate voice.',
+      error: error.message
+    });
   }
 });
 
+// 🚨 Catch-all for wrong routes
+app.all('*', (req, res) => {
+  res.status(404).json({
+    error: 'Route not found. Use POST /api/generate-voice'
+  });
+});
+
+// ✅ Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
+  console.log(`👉 Test at: https://ai-voice-backend-b4q2.onrender.com`);
 });
